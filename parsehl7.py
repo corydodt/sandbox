@@ -4,40 +4,60 @@ import re
 
 import attr
 
-from pypeg2 import K, maybe_some as pp_maybe_some
+from py.test import fixture
+
+from pypeg2 import Symbol, maybe_some as pp_maybe_some, parse
 
 
-def preparse(text):
-    """
-    Get the field separator
-    """
-    prefix = text[:4]
-    assert prefix[:3] == 'MSH'
-    return Symbol(prefix[3]), Symbol(prefix[4])
-
-
-fieldSep, compSep = preparse(text)
-lineSep = re.compile(b'\r')
-lineSepLax = re.compile(b'\n')
-startBlock = b'\x0b'
-endBlock = b'\x1c\r'
-segmentName = re.compile('[a-zA-Z0-9_]+')
-
-
-# Component           = [Subcomponent*]
-# SubSeparator        = K("~")
-Component           = re.compile('.*?(?=[' + fieldSep + '])') # lookahead whee
-Field               = [Component, pp_maybe_some(compSep, Component)]
-Segment             = [segmentName, pp_maybe_some(fieldSep, Field), lineSep] # fixme use omit() on separators
-InterfaceMessage    = [startBlock, MSH, lineSep, pp_maybe_some(Segment), endBlock]
-
-InterfaceMessageLax = [MSH, lineSep, pp_maybe_some(Segment)]
-
-
-def parseInterfaceMessage(text):
-    fieldSep, compSep = preparse(text)
+@attr.s
+class Root(object):
+    fieldSep = attr.ib()
+    componentSep = attr.ib()
+    lax = attr.ib(default=False)
     
+    @staticmethod
+    def preparse(text):
+        """
+        => field-separator, component-separator, lax-mode(bool)
+        
+        Get the field separators and parse mode
+        """
+        lax = False
+        if startBlock.match(text[0]):
+            assert endBlock.match(text[-2:]), "Found mllp start but no mllp end"
+            text = text[1:-2]
+        else:
+            lax = True
+        assert text[:3] == 'MSH'
+        return text[3], text[4], lax 
+
+    @property
+    def grammar(self):
+        lineSep             = re.compile(b'\r')
+        lineSepLax          = re.compile(b'\n')
+        startBlock          = b'\x0b'
+        endBlock            = b'\x1c\r'
+        segmentName         = re.compile('[a-zA-Z0-9_]+')
+        Component           = re.compile('.*?(?=[' + self.fieldSep.pattern + '])')  # lookahead whee
+        Field               = [Component, pp_maybe_some(self.compSep.pattern, Component)]
+        Segment             = [segmentName, pp_maybe_some(self.fieldSep.pattern, Field), lineSep]  # fixme use ignore() on separators
+        InterfaceMessage    = [startBlock, MSH, lineSep, pp_maybe_some(Segment), endBlock]
+        InterfaceMessageLax = [MSH, lineSepLax, pp_maybe_some(Segment)]
+        return attr.makeinstance(
+            dict(
+                InterfaceMessage=InterfaceMessage,
+                InterfaceMessageLax=InterfaceMessageLax,
+                ))
     
+    @classmethod
+    def load(cls, text):
+        # choose a mode, lax (\n newlines, no MLLP block markers) or mllp
+        fieldSep, compSep, lax = Root.preparse(text)
+        self = cls(fieldSep=fs, componentSep=cs, lax=lax)
+        language = self.grammar.InterfaceMessageLax if self.lax else self.grammar.InterfaceMessage
+        obj = parse(language(), text)
+        return obj
+
 
 @fixture
 def adtText():
@@ -53,9 +73,8 @@ def adtText():
         """).replace('\n', '\r')
 
 def test_load(adtText):
-    im = InterfaceMessage()
-    im.load(adtText)
-    pt = Patient.fromMessage(im)
+    asdkjlfh_ast_idk = Root.load(adtText)
+    pt = Patient.fromMessage(obj)
     assert pt.givenName == 'GMH'
     assert p.familyName == 'IPCT'
     assert pt.birthdate == parseDate('1981-03-11')
