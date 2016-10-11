@@ -1,0 +1,13 @@
+# lineSep = '\r';
+# lineSepLax = '\n';
+lineSep = '\n';
+fieldSep = '|';
+componentSep = '^';
+segmentName = /[a-zA-Z0-9_]+/;
+component = /[^^|\n\r]*/;
+field = (componentSep).{@:component};
+segment = id:field {fieldSep fields:field}*;
+
+msh = id:'MSH' '|^' {[ fieldSep ] fields:field}*;
+segmentRest = @:segment;
+interfaceMessage = msh:msh (lineSep).{segmentRest}*;
