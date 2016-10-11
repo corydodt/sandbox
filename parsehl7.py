@@ -104,23 +104,27 @@ def root():
     return Root(b'|', b'^')
 
 
-def mkBasic(o):
-    cls = attr.make_class(b'BasicGrammar', ['grammar'])
-    return cls
+def mkBasic(name, *o):
+    return attr.make_class(
+            str(name),
+            {'grammar': o,
+             'whitespace': ''},
+            )
 
 
 def test_basics(root):
-
-    @attr.s
-    class X(object):
-        grammar = attr.ib(default=(b'=',))
-
-    print(X)
-    print(parse(b'=', X))
-    s = b'\r'
-    assert 'xyz' == parse(s, mkBasic(root.grammar.lineSep.pattern))
+    parse('=', mkBasic(b'Eq', '='))
+    s = b'\r\r'
+    print(root.grammar.lineSep)
+    LS = mkBasic(b'LS', root.grammar.lineSep)
+    class LS(object):
+        grammar = (re.compile('\rr'),)
+        def __init__(*a, **kw):
+            print(repr((a, kw)))
+    assert 'xyz' == parse(s, LS, whitespace='')
+    assert 'xyz' == parse(s, LS, whitespace='')
     s = b'\n'
-    assert b'abc' == parse(s, mkBasic(root.grammar.lineSepLax))
+    assert b'abc' == parse(s, mkBasic(b'LSL', root.grammar.lineSepLax.pattern))
 
 
 def test_segment(root, msh):
